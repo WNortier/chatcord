@@ -2,7 +2,8 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const socketio = require('socket.io');
-const formatMessage = require('./utils/messages')
+const formatMessage = require('./utils/messages');
+const { userJoin, getCurrentUser, userLeave, getRoomUsers } = require('./utils/users');
 
 const app = express();
 const server = http.createServer(app);
@@ -15,27 +16,49 @@ const botName = 'ChatCord Bot'
 
 // Run when a client connects
 io.on('connection', socket => {
-    //console.log('New WS Connection...');
+    socket.on('joinRoom', ({username, room}) => {
+        
+        const user = userJoin(socket.id, username, room);
+        socket.join(user.room)
 
-    // To a single client
-    // Welcoming current user
-    socket.emit('message', formatMessage(botName, 'Welcome to ChatCord!'));
+        // Welcoming current user
+        socket.emit('message', formatMessage(botName, 'Welcome to ChatCord!'));
+    
+        // Broadcast when a user connects to all clients except the connecting client
+        socket.broadcast
+        .to(user.room)
+        .emit('message', formatMessage(botName, `${user.username} has joined the chat!`));
 
-    // Broadcast when a user connects to all clients except the connecting client
-    socket.broadcast.emit('message', formatMessage(botName, 'A user has joined the chat'));
+        // Send userrs and room info
+        io.to(user.room).emit('roomUsers', {
+            room: user.room,
+            users: getRoomUsers(user.room)
+        });
+
+    })
+
 
     // To all clients in general 
     //io.emit()
 
     socket.on('disconnect', () => {
-        io.emit('message', formatMessage(botName, 'A user has left the chat'));
+        const user = userLeave(socket.id);
+        
+        if (user) {
+            io.to(user.room).emit('message', formatMessage(botName, `${user.username} has left the chat!`));
+        }
+    
     });
 
     socket.on('chatMessage', msg => {
-        io.emit('message', formatMessage('USER', msg));
+        const user = getCurrentUser(socket.id);
+
+        io.emit('message', formatMessage(`${user.username}`, msg));
+
     });
+
 });
 
-const PORT = 5000 || process.env.PORT; 
+const PORT = process.env.PORT || 5000; 
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
